@@ -1,0 +1,2 @@
+RELEASEVERSION = "OB54"
+DEBUG = False
