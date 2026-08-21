@@ -212,6 +212,8 @@ def get_player_stat():
         }), 500
 
 @app.route('/get_player_personal_show', methods=['GET'])
+@app.route('/player', methods=['GET'])
+@app.route('/profile', methods=['GET'])
 def get_account_info():
     try:
         # Get parameters with defaults
