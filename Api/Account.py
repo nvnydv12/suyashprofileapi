@@ -30,6 +30,11 @@ def get_garena_token(uid, password):
             
         if "token" in data:
             token = data["token"]
+            
+            # DEBUG: if token is weird, raise it so we can see it on Vercel
+            if not token or token == "Bearer " or len(token) < 20:
+                raise ValueError(f"JWT API returned bad token! Raw data: {data}")
+                
             if token.startswith("Bearer "):
                 token = token.replace("Bearer ", "").strip()
                 
@@ -39,6 +44,7 @@ def get_garena_token(uid, password):
             }
     except Exception as e:
         print(f"Error making request to JWT API: {e}")
+        return {"debug_error": f"JWT API Error: {e}"}
     return None
 
 

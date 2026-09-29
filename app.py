@@ -322,6 +322,10 @@ def get_account_info():
         
         # Step 1: Get Garena token
         garena_token_result = get_garena_token(accounts[server]['uid'], accounts[server]['password'])
+        
+        if garena_token_result and "debug_error" in garena_token_result:
+            return jsonify(garena_token_result), 500, {'Content-Type': 'application/json; charset=utf-8'}
+            
         if not garena_token_result or 'access_token' not in garena_token_result or 'open_id' not in garena_token_result:
             response = {
                 "status": "error",
