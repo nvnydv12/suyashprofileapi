@@ -11,6 +11,13 @@ from Api.InGame import get_player_personal_show, get_player_stats, search_accoun
 accounts = load_accounts()
 
 
+def ts_to_bst(ts):
+    try:
+        dt = datetime.fromtimestamp(int(ts)) + timedelta(hours=6)
+        return dt.strftime("%d %b %Y at %I:%M:%S %p") + " (BST)"
+    except:
+        return "N/A"
+
 app = Flask(__name__)
 # Enable CORS for all origins on all routes
 CORS(app)
@@ -353,6 +360,13 @@ def get_account_info():
             }
             return jsonify(response), 404, {'Content-Type': 'application/json; charset=utf-8'}
         
+        # Format timestamps
+        if player_personal_show_result and "basicinfo" in player_personal_show_result:
+            if "lastloginat" in player_personal_show_result["basicinfo"]:
+                player_personal_show_result["basicinfo"]["lastloginat"] = ts_to_bst(player_personal_show_result["basicinfo"]["lastloginat"])
+            if "createat" in player_personal_show_result["basicinfo"]:
+                player_personal_show_result["basicinfo"]["createat"] = ts_to_bst(player_personal_show_result["basicinfo"]["createat"])
+
         # Success response
         formatted_json = json.dumps(player_personal_show_result, indent=2, ensure_ascii=False)
         return formatted_json, 200, {'Content-Type': 'application/json; charset=utf-8'}
