@@ -29,8 +29,12 @@ def get_garena_token(uid, password):
             print("[I] JWT RES:", data)
             
         if "token" in data:
+            token = data["token"]
+            if token.startswith("Bearer "):
+                token = token.replace("Bearer ", "").strip()
+                
             return {
-                'access_token': data["token"],
+                'access_token': token,
                 'open_id': data.get("region", "IND")
             }
     except Exception as e:
