@@ -8,10 +8,6 @@ from Configuration.AESConfiguration import MAIN_KEY, MAIN_IV
 
 def load_accounts():
     try:
-        configured_accounts = os.getenv('ACCOUNT_CONFIGURATION_JSON')
-        if configured_accounts:
-            return json.loads(configured_accounts)
-
         configuration_path = Path(__file__).resolve().parent.parent / 'Configuration' / 'AccountConfiguration.json'
         with configuration_path.open('r', encoding='utf-8') as file:
             return json.load(file)
