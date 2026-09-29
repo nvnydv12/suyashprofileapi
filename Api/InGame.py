@@ -133,7 +133,7 @@ def get_player_personal_show(serverurl, authorization, account_id, need_gallery_
     except requests.exceptions.RequestException as e:
         error_msg = f"Request failed: {e}"
         if 'response' in locals() and hasattr(response, 'text'):
-            error_msg += f", Response: {response.text}"
+            error_msg += f", Response: {response.text}, Auth_Preview: '{authorization[:15]}...'"
         print(error_msg)
         return {"debug_error": error_msg}
     except Exception as e:
