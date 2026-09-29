@@ -359,6 +359,9 @@ def get_account_info():
                 "code": "PLAYER_DATA_NOT_FOUND"
             }
             return jsonify(response), 404, {'Content-Type': 'application/json; charset=utf-8'}
+            
+        if "debug_error" in player_personal_show_result:
+            return jsonify(player_personal_show_result), 500, {'Content-Type': 'application/json; charset=utf-8'}
         
         # Format timestamps
         if player_personal_show_result and "basicinfo" in player_personal_show_result:
