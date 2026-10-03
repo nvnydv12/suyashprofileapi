@@ -45,12 +45,12 @@ def get_search_account_by_keyword():
             return json.dumps({"error": f"Invalid server: {region}"}, indent=2), 400, {'Content-Type': 'application/json; charset=utf-8'}
         
         # Authenticate with Garena
-        auth_response = get_garena_token(accounts[region]['uid'], accounts[region]['password'])
+        auth_response = get_garena_token(accounts[region]['uid'], accounts[region]['password'], region)
         if not auth_response or 'access_token' not in auth_response:
             return json.dumps({"error": "Authentication failed"}, indent=2), 401, {'Content-Type': 'application/json; charset=utf-8'}
         
         # Get major login credentials
-        login_response = get_major_login(auth_response["access_token"], auth_response["open_id"])
+        login_response = get_major_login(auth_response["access_token"], region)
         if not login_response or 'token' not in login_response:
             return json.dumps({"error": "Major login failed"}, indent=2), 401, {'Content-Type': 'application/json; charset=utf-8'}
         
@@ -116,7 +116,7 @@ def get_player_stat():
 
         # Step 1: Get Garena token
         try:
-            garena_token_result = get_garena_token(accounts[server]['uid'], accounts[server]['password'])
+            garena_token_result = get_garena_token(accounts[server]['uid'], accounts[server]['password'], server)
             
             if not garena_token_result or 'access_token' not in garena_token_result:
                 return jsonify({
@@ -134,7 +134,7 @@ def get_player_stat():
 
         # Step 2: Get Major login
         try:
-            major_login_result = get_major_login(garena_token_result["access_token"], garena_token_result["open_id"])
+            major_login_result = get_major_login(garena_token_result["access_token"], server)
             
             if not major_login_result or 'token' not in major_login_result:
                 return jsonify({
@@ -321,7 +321,7 @@ def get_account_info():
             return jsonify(response), 500, {'Content-Type': 'application/json; charset=utf-8'}
         
         # Step 1: Get Garena token
-        garena_token_result = get_garena_token(accounts[server]['uid'], accounts[server]['password'])
+        garena_token_result = get_garena_token(accounts[server]['uid'], accounts[server]['password'], server)
         
         if garena_token_result and "debug_error" in garena_token_result:
             return jsonify(garena_token_result), 500, {'Content-Type': 'application/json; charset=utf-8'}
@@ -336,7 +336,7 @@ def get_account_info():
             return jsonify(response), 401, {'Content-Type': 'application/json; charset=utf-8'}
         
         # Step 2: Get major login
-        major_login_result = get_major_login(garena_token_result["access_token"], garena_token_result["open_id"])
+        major_login_result = get_major_login(garena_token_result["access_token"], server)
         if not major_login_result or 'serverUrl' not in major_login_result or 'token' not in major_login_result:
             response = {
                 "status": "error",
