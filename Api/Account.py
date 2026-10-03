@@ -11,6 +11,18 @@ TOKENS_FILE = os.path.join(os.path.dirname(__file__), '..', 'Configuration', 'to
 # In-memory token cache: {server_key: {"token": "...", "expires_at": float}}
 _TOKEN_CACHE = {}
 
+# Fresh IND accounts pool from DARK_MASTER for instant failover
+IND_ACCOUNTS_POOL = [
+    ("8003725136", "861945DDA2623F3D521CEC3A37692210DE748D4BB4B18DCE9173180210F26586"),
+    ("8003725190", "F73D0C8C51A3730A0E751F88DAC92D8018706A30B9D3D228D7D30A38B1058F9C"),
+    ("8003725224", "81DF4E031648ED36FDB8EA80C9D7CBEADDC361F810E0AE5BF42402911269954A"),
+    ("8003725265", "6F92B5D90ED9DB580057C2D72DCEC7E7B8C05DC0A107AF37FFE8C6CFC6533555"),
+    ("8003725297", "637F62B516F272E4D714DA9CDD820A645E8F2207AEE74AB2C591B220EAD7B682"),
+    ("8003725243", "AE1852FFE02B18CF3CDF3266EC32E1C9DAD1178D3AFB0D034A6FB9BC9BAD3381"),
+    ("8003725425", "D757E8CC430063D201C9E91B8060D45528384D8DC412813289943DB2F0551A2E"),
+    ("8003725387", "5D1296A7BCD3A12304E316176D0803C5E9E13DF06A906948837CC05247B052D3")
+]
+
 def get_jwt_exp(token: str) -> int:
     """Decode JWT without verifying signature to extract exp timestamp."""
     try:
@@ -132,12 +144,15 @@ def get_garena_token(uid, password, server="IND", force_refresh=False):
 
     # 3. Fallback accounts if primary failed (e.g. if account banned or rate limited)
     if not token:
-        fallback_creds = [
-            ("7881118340", "86CE7D21FB862C317D6AB0D1266FB32FF2086E32E539744F86A3361ADC300884"),
-            ("7876699711", "EF8E6EC033A3564DFB43084601BD128E4AABB4C8854037A1AC86F513AE223C92")
-        ]
-        for fb_uid, fb_pwd in fallback_creds:
-            if fb_uid != str(uid):
+        if server_upper == "IND":
+            candidates = IND_ACCOUNTS_POOL
+        else:
+            candidates = [
+                ("7881118340", "86CE7D21FB862C317D6AB0D1266FB32FF2086E32E539744F86A3361ADC300884"),
+                ("7876699711", "EF8E6EC033A3564DFB43084601BD128E4AABB4C8854037A1AC86F513AE223C92")
+            ]
+        for fb_uid, fb_pwd in candidates:
+            if str(fb_uid) != str(uid):
                 token = fetch_jwt_from_api(fb_uid, fb_pwd, server_upper)
                 if token:
                     break
@@ -166,12 +181,12 @@ def get_garena_token(uid, password, server="IND", force_refresh=False):
 def get_major_login(logintoken, openid_or_server="IND"):
     """
     Maps region to correct Garena regional game server URL.
-    IND routes to clientbp (global regional gateway) which reliably handles IND profiles.
+    IND routes to official https://client.ind.freefiremobile.com for authentic live player responses.
     """
     region = (openid_or_server or "IND").upper()
 
     REGION_CONFIG = {
-        "IND": "https://clientbp.ppmainecoonghj.com",
+        "IND": "https://client.ind.freefiremobile.com",
         "BD": "https://clientbp.ppmainecoonghj.com",
         "SG": "https://clientbp.ppmainecoonghj.com",
         "RU": "https://clientbp.ppmainecoonghj.com",
@@ -188,7 +203,7 @@ def get_major_login(logintoken, openid_or_server="IND"):
         "PK": "https://clientbp.ppmainecoonghj.com"
     }
 
-    server_url = REGION_CONFIG.get(region, "https://clientbp.ppmainecoonghj.com")
+    server_url = REGION_CONFIG.get(region, "https://client.ind.freefiremobile.com" if region == "IND" else "https://clientbp.ppmainecoonghj.com")
 
     return {
         'token': logintoken,
