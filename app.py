@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from Utilities.until import load_accounts
 from Api.Account import get_garena_token, get_major_login, clear_token_cache
 from Api.InGame import get_player_personal_show, get_player_stats, search_account_by_keyword
@@ -11,12 +11,15 @@ from Api.InGame import get_player_personal_show, get_player_stats, search_accoun
 accounts = load_accounts()
 
 
-def ts_to_bst(ts):
+def ts_to_ist(ts):
     try:
-        dt = datetime.fromtimestamp(int(ts)) + timedelta(hours=6)
-        return dt.strftime("%d %b %Y at %I:%M:%S %p") + " (BST)"
+        # Convert unix timestamp in UTC to Indian Standard Time (IST = UTC + 5:30)
+        dt = datetime.fromtimestamp(int(ts), tz=timezone.utc) + timedelta(hours=5, minutes=30)
+        return dt.strftime("%d %b %Y at %I:%M:%S %p") + " (IST)"
     except:
         return "N/A"
+
+ts_to_bst = ts_to_ist  # Alias for backward compatibility
 
 app = Flask(__name__)
 # Enable CORS for all origins on all routes
@@ -383,12 +386,17 @@ def get_account_info():
         if "debug_error" in player_personal_show_result:
             return jsonify(player_personal_show_result), 500, {'Content-Type': 'application/json; charset=utf-8'}
         
-        # Format timestamps
+        # Format timestamps in Indian Standard Time (IST)
         if player_personal_show_result and "basicinfo" in player_personal_show_result:
             if "lastloginat" in player_personal_show_result["basicinfo"]:
-                player_personal_show_result["basicinfo"]["lastloginat"] = ts_to_bst(player_personal_show_result["basicinfo"]["lastloginat"])
+                player_personal_show_result["basicinfo"]["lastloginat"] = ts_to_ist(player_personal_show_result["basicinfo"]["lastloginat"])
             if "createat" in player_personal_show_result["basicinfo"]:
-                player_personal_show_result["basicinfo"]["createat"] = ts_to_bst(player_personal_show_result["basicinfo"]["createat"])
+                player_personal_show_result["basicinfo"]["createat"] = ts_to_ist(player_personal_show_result["basicinfo"]["createat"])
+        if player_personal_show_result and "captainbasicinfo" in player_personal_show_result:
+            if "lastloginat" in player_personal_show_result["captainbasicinfo"]:
+                player_personal_show_result["captainbasicinfo"]["lastloginat"] = ts_to_ist(player_personal_show_result["captainbasicinfo"]["lastloginat"])
+            if "createat" in player_personal_show_result["captainbasicinfo"]:
+                player_personal_show_result["captainbasicinfo"]["createat"] = ts_to_ist(player_personal_show_result["captainbasicinfo"]["createat"])
 
         # Success response
         formatted_json = json.dumps(player_personal_show_result, indent=2, ensure_ascii=False)
