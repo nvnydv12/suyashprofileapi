@@ -4,7 +4,7 @@ import json
 import time
 from datetime import datetime, timedelta
 from Utilities.until import load_accounts
-from Api.Account import get_garena_token, get_major_login
+from Api.Account import get_garena_token, get_major_login, clear_token_cache
 from Api.InGame import get_player_personal_show, get_player_stats, search_account_by_keyword
 
 
@@ -354,6 +354,22 @@ def get_account_info():
             need_gallery_info, 
             call_sign_src_int
         )
+
+        if player_personal_show_result and isinstance(player_personal_show_result, dict) and "debug_error" in player_personal_show_result:
+            err_str = str(player_personal_show_result["debug_error"]).lower()
+            if "401" in err_str or "unauthorized" in err_str or "expired" in err_str or "invalid" in err_str:
+                clear_token_cache(server)
+                garena_token_result = get_garena_token(accounts[server]['uid'], accounts[server]['password'], server, force_refresh=True)
+                if garena_token_result and "access_token" in garena_token_result:
+                    major_login_result = get_major_login(garena_token_result["access_token"], server)
+                    if major_login_result and "serverUrl" in major_login_result and "token" in major_login_result:
+                        player_personal_show_result = get_player_personal_show(
+                            major_login_result["serverUrl"], 
+                            major_login_result["token"], 
+                            uid_int, 
+                            need_gallery_info, 
+                            call_sign_src_int
+                        )
 
         if not player_personal_show_result:
             response = {
