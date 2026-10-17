@@ -4,8 +4,14 @@ import json
 import time
 from datetime import datetime, timedelta, timezone
 from Utilities.until import load_accounts
-from Api.Account import get_garena_token, get_major_login, clear_token_cache
-from Api.InGame import get_player_personal_show, get_player_stats, search_account_by_keyword
+from Api.Account import (
+    get_garena_token, 
+    get_major_login, 
+    clear_token_cache, 
+    mark_token_rate_limited, 
+    mark_token_expired
+)
+from Api.InGame import get_player_personal_show, get_player_stats, search_account_by_keyword, APIError, ProtobufError
 
 
 accounts = load_accounts()
@@ -47,19 +53,45 @@ def get_search_account_by_keyword():
         if region not in accounts:
             return json.dumps({"error": f"Invalid server: {region}"}, indent=2), 400, {'Content-Type': 'application/json; charset=utf-8'}
         
-        # Authenticate with Garena
-        auth_response = get_garena_token(accounts[region]['uid'], accounts[region]['password'], region)
-        if not auth_response or 'access_token' not in auth_response:
-            return json.dumps({"error": "Authentication failed"}, indent=2), 401, {'Content-Type': 'application/json; charset=utf-8'}
+        # Authenticate and search with automatic multi-account failover
+        search_results = None
+        max_attempts = 4
+        last_error = None
         
-        # Get major login credentials
-        login_response = get_major_login(auth_response["access_token"], region)
-        if not login_response or 'token' not in login_response:
-            return json.dumps({"error": "Major login failed"}, indent=2), 401, {'Content-Type': 'application/json; charset=utf-8'}
+        for attempt in range(max_attempts):
+            auth_response = get_garena_token(
+                accounts[region]['uid'], 
+                accounts[region]['password'], 
+                region, 
+                force_refresh=(attempt > 0)
+            )
+            if not auth_response or 'access_token' not in auth_response:
+                continue
+            
+            curr_token = auth_response["access_token"]
+            login_response = get_major_login(curr_token, region)
+            if not login_response or 'token' not in login_response:
+                continue
+            
+            try:
+                search_results = search_account_by_keyword(login_response["serverUrl"], login_response["token"], search_term)
+                break
+            except Exception as e:
+                last_error = e
+                err_str = str(e).lower()
+                if "429" in err_str or "too many requests" in err_str:
+                    mark_token_rate_limited(curr_token, region, cooldown_seconds=300)
+                    continue
+                elif "401" in err_str or "unauthorized" in err_str:
+                    mark_token_expired(curr_token, region)
+                    continue
+                else:
+                    break
         
-        # Search for accounts
-        search_results = search_account_by_keyword(login_response["serverUrl"], login_response["token"], search_term)
-        
+        if search_results is None:
+            err_msg = str(last_error) if last_error else "Search service unavailable"
+            return json.dumps({"error": f"Search failed: {err_msg}"}, indent=2), 502, {'Content-Type': 'application/json; charset=utf-8'}
+
         # Return formatted response
         formatted_response = json.dumps(search_results, indent=2, ensure_ascii=False)
         return formatted_response, 200, {'Content-Type': 'application/json; charset=utf-8'}
@@ -117,101 +149,76 @@ def get_player_stat():
                 "message": "Matchmode must be 'CAREER', 'NORMAL', or 'RANKED'"
             }), 400
 
-        # Step 1: Get Garena token
-        try:
-            garena_token_result = get_garena_token(accounts[server]['uid'], accounts[server]['password'], server)
-            
-            if not garena_token_result or 'access_token' not in garena_token_result:
-                return jsonify({
-                    "success": False,
-                    "error": "Garena authentication failed",
-                    "message": "Failed to obtain Garena access token"
-                }), 401
-                
-        except Exception as e:
-            return jsonify({
-                "success": False,
-                "error": "Garena authentication error",
-                "message": f"Failed to authenticate with Garena: {str(e)}"
-            }), 502
+        # Fetch player stats with automatic multi-account failover & rate-limit handling
+        player_stats = None
+        max_attempts = 4
+        last_error = None
 
-        # Step 2: Get Major login
-        try:
-            major_login_result = get_major_login(garena_token_result["access_token"], server)
-            
-            if not major_login_result or 'token' not in major_login_result:
-                return jsonify({
-                    "success": False,
-                    "error": "Major login failed",
-                    "message": "Failed to obtain Major login token"
-                }), 401
-                
-        except Exception as e:
-            return jsonify({
-                "success": False,
-                "error": "Major login error",
-                "message": f"Failed to login to Major: {str(e)}"
-            }), 502
-
-        # Step 3: Get player stats
-        try:
-            player_stats = get_player_stats(
-                major_login_result["token"], 
-                major_login_result["serverUrl"], 
-                gamemode, 
-                uid, 
-                matchmode
+        for attempt in range(max_attempts):
+            garena_token_result = get_garena_token(
+                accounts[server]['uid'], 
+                accounts[server]['password'], 
+                server,
+                force_refresh=(attempt > 0)
             )
             
-            if not player_stats:
+            if not garena_token_result or 'access_token' not in garena_token_result:
+                continue
+
+            current_token = garena_token_result["access_token"]
+            major_login_result = get_major_login(current_token, server)
+            if not major_login_result or 'token' not in major_login_result:
+                continue
+
+            try:
+                player_stats = get_player_stats(
+                    major_login_result["token"], 
+                    major_login_result["serverUrl"], 
+                    gamemode, 
+                    uid, 
+                    matchmode
+                )
+                if player_stats:
+                    break
+            except APIError as e:
+                last_error = e
+                err_str = str(e).lower()
+                if "429" in err_str or "too many requests" in err_str:
+                    mark_token_rate_limited(current_token, server, cooldown_seconds=300)
+                    continue
+                elif "401" in err_str or "unauthorized" in err_str:
+                    mark_token_expired(current_token, server)
+                    continue
+                else:
+                    break
+            except Exception as e:
+                last_error = e
+                break
+
+        if not player_stats:
+            if last_error:
                 return jsonify({
                     "success": False,
-                    "error": "No stats data",
-                    "message": "No player statistics found for the given parameters"
-                }), 404
+                    "error": "External API error",
+                    "message": str(last_error)
+                }), 502
+            return jsonify({
+                "success": False,
+                "error": "No stats data",
+                "message": "No player statistics found for the given parameters"
+            }), 404
 
-            # Return formatted JSON response
-            return jsonify({
-                "success": True,
-                "data": player_stats,
-                "metadata": {
-                    "server": server,
-                    "uid": uid,
-                    "gamemode": gamemode,
-                    "matchmode": matchmode
-                }
-            }), 200
-            
-        except ValueError as e:
-            return jsonify({
-                "success": False,
-                "error": "Invalid request parameters",
-                "message": str(e)
-            }), 400
-        except ConnectionError as e:
-            return jsonify({
-                "success": False,
-                "error": "Connection error",
-                "message": str(e)
-            }), 503
-        except ProtobufError as e:
-            return jsonify({
-                "success": False,
-                "error": "Data processing error",
-                "message": str(e)
-            }), 500
-        except APIError as e:
-            return jsonify({
-                "success": False,
-                "error": "External API error",
-                "message": str(e)
-            }), 502
-        except Exception as e:
-            return jsonify({
-                "success": False,
-                "error": "Stats retrieval error",
-                "message": f"Failed to retrieve player stats: {str(e)}"
-            }), 500
+        # Return formatted JSON response
+        return jsonify({
+            "success": True,
+            "data": player_stats,
+            "metadata": {
+                "server": server,
+                "uid": uid,
+                "gamemode": gamemode,
+                "matchmode": matchmode
+            }
+        }), 200
 
     except Exception as e:
         # Catch any unexpected errors
@@ -323,56 +330,49 @@ def get_account_info():
             }
             return jsonify(response), 500, {'Content-Type': 'application/json; charset=utf-8'}
         
-        # Step 1: Get Garena token
-        garena_token_result = get_garena_token(accounts[server]['uid'], accounts[server]['password'], server)
-        
-        if garena_token_result and "debug_error" in garena_token_result:
-            return jsonify(garena_token_result), 500, {'Content-Type': 'application/json; charset=utf-8'}
-            
-        if not garena_token_result or 'access_token' not in garena_token_result or 'open_id' not in garena_token_result:
-            response = {
-                "status": "error",
-                "error": "Authentication Failed",
-                "message": "Failed to obtain Garena token. Invalid credentials or service unavailable.",
-                "code": "GARENA_AUTH_FAILED"
-            }
-            return jsonify(response), 401, {'Content-Type': 'application/json; charset=utf-8'}
-        
-        # Step 2: Get major login
-        major_login_result = get_major_login(garena_token_result["access_token"], server)
-        if not major_login_result or 'serverUrl' not in major_login_result or 'token' not in major_login_result:
-            response = {
-                "status": "error",
-                "error": "Login Failed",
-                "message": "Failed to perform major login. Service unavailable.",
-                "code": "MAJOR_LOGIN_FAILED"
-            }
-            return jsonify(response), 401, {'Content-Type': 'application/json; charset=utf-8'}
-        
-        # Step 3: Get player personal show data
-        player_personal_show_result = get_player_personal_show(
-            major_login_result["serverUrl"], 
-            major_login_result["token"], 
-            uid_int, 
-            need_gallery_info, 
-            call_sign_src_int
-        )
+        # Fetch player personal show data with automatic multi-account failover & rate-limit handling
+        player_personal_show_result = None
+        max_attempts = 4
 
-        if player_personal_show_result and isinstance(player_personal_show_result, dict) and "debug_error" in player_personal_show_result:
-            err_str = str(player_personal_show_result["debug_error"]).lower()
-            if "401" in err_str or "unauthorized" in err_str or "expired" in err_str or "invalid" in err_str:
-                clear_token_cache(server)
-                garena_token_result = get_garena_token(accounts[server]['uid'], accounts[server]['password'], server, force_refresh=True)
-                if garena_token_result and "access_token" in garena_token_result:
-                    major_login_result = get_major_login(garena_token_result["access_token"], server)
-                    if major_login_result and "serverUrl" in major_login_result and "token" in major_login_result:
-                        player_personal_show_result = get_player_personal_show(
-                            major_login_result["serverUrl"], 
-                            major_login_result["token"], 
-                            uid_int, 
-                            need_gallery_info, 
-                            call_sign_src_int
-                        )
+        for attempt in range(max_attempts):
+            garena_token_result = get_garena_token(
+                accounts[server]['uid'], 
+                accounts[server]['password'], 
+                server,
+                force_refresh=(attempt > 0)
+            )
+            
+            if not garena_token_result or 'access_token' not in garena_token_result:
+                if attempt == max_attempts - 1 and garena_token_result and "debug_error" in garena_token_result:
+                    return jsonify(garena_token_result), 500, {'Content-Type': 'application/json; charset=utf-8'}
+                continue
+
+            current_token = garena_token_result["access_token"]
+            major_login_result = get_major_login(current_token, server)
+            if not major_login_result or 'serverUrl' not in major_login_result or 'token' not in major_login_result:
+                continue
+
+            player_personal_show_result = get_player_personal_show(
+                major_login_result["serverUrl"], 
+                major_login_result["token"], 
+                uid_int, 
+                need_gallery_info, 
+                call_sign_src_int
+            )
+
+            if player_personal_show_result and isinstance(player_personal_show_result, dict) and "debug_error" in player_personal_show_result:
+                err_str = str(player_personal_show_result["debug_error"]).lower()
+                if "429" in err_str or "too many requests" in err_str:
+                    mark_token_rate_limited(current_token, server, cooldown_seconds=300)
+                    continue
+                elif "401" in err_str or "unauthorized" in err_str or "expired" in err_str or "invalid" in err_str:
+                    mark_token_expired(current_token, server)
+                    continue
+                else:
+                    break
+            else:
+                # Success!
+                break
 
         if not player_personal_show_result:
             response = {

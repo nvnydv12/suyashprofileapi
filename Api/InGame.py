@@ -7,7 +7,11 @@ from Utilities.until import encode_protobuf, decode_protobuf
 import json
 from Configuration.APIConfiguration import RELEASEVERSION, DEBUG
 
+class APIError(Exception):
+    pass
 
+class ProtobufError(Exception):
+    pass
 
 def search_account_by_keyword(server_url, auth_token, keyword):
     """
