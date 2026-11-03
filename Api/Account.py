@@ -20,21 +20,28 @@ _TOKEN_TO_UID = {}
 # Round-robin counter per server
 _RR_COUNTER = {}
 
-# Fresh IND accounts pool (verified working accounts first)
+# Verified working initialized Indian accounts pool (svr: 3)
 IND_ACCOUNTS_POOL = [
-    ("8003728629", "C0E03155B7BF4E52F2921AB0557E790DBD29085BD0B6162D80E8C80EBC53C142"),
-    ("8003728885", "3D2ADD9537B425E004C078887FEA07056165C85587ACB69A663B30D95EF69A49"),
-    ("8003728916", "C296B9CE1C7DF30DC97E55EA79B38660CE3511FAE022244FA8ED26EF73F3D23D"),
-    ("8003729060", "C0661F6D80810676F2758E2ACF340A14C4CFD09557B3857892515E163D9740D4"),
-    ("8003725574", "5EDD8DFACB42909620CC4C83AA89FD8FC03D2B353DF05369CA8DAB4440B9FAF3")
+    ("4718507823", "506D5EF550F365C89806066468D5327C9FC7E40F60548BF9FE7BAA64D1ACF099"),
+    ("4718508029", "98A796FACDCBE9C9E1A169A1C589936D988FD0BAC1E7902FE5A0706DB77F5326"),
+    ("4718548116", "D25435CB701067838FBC9836D3DFB7423FC19B06F7868B88CDB1EB270B9BD164"),
+    ("4718548400", "D97F7650F59A2CC15047551DBC5F624DDE5D8EC9D576E315FF6610F7D10CB08C"),
 ]
+
+# Fresh verified accounts pool for high-availability rotation across global regions
+GLOBAL_ACCOUNTS_POOL = [
+    ("7881118340", "86CE7D21FB862C317D6AB0D1266FB32FF2086E32E539744F86A3361ADC300884"),  # SG (svr: 1)
+    ("7881197800", "36644BD83DA230C788A39F199F2CF8EF27ABFC65C51C66458019E37037CDBE73"),  # PK (svr: 1)
+    ("7881331930", "64B6B6331A4BF91AE3BA117398E543A1D805342E91CA707585ECE1E1D390CDBF"),  # CIS (svr: 1)
+    ("7876509571", "4115B671E3308EAAE76B7E4C727616A7DCD8A6697D17B9F6968ADC23FBFFA169"),  # US (svr: 2)
+    ("7876699711", "EF8E6EC033A3564DFB43084601BD128E4AABB4C8854037A1AC86F513AE223C92")   # BD (svr: 1)
+]
+
+HEALTHY_ACCOUNTS_POOL = IND_ACCOUNTS_POOL + GLOBAL_ACCOUNTS_POOL
 
 FALLBACK_ACCOUNTS = {
     "IND": IND_ACCOUNTS_POOL,
-    "DEFAULT": [
-        ("7881118340", "86CE7D21FB862C317D6AB0D1266FB32FF2086E32E539744F86A3361ADC300884"),
-        ("7876699711", "EF8E6EC033A3564DFB43084601BD128E4AABB4C8854037A1AC86F513AE223C92")
-    ]
+    "DEFAULT": GLOBAL_ACCOUNTS_POOL
 }
 
 def get_jwt_exp(token: str) -> int:
@@ -276,13 +283,42 @@ def get_garena_token(uid=None, password=None, server="IND", force_refresh=False)
 
 def get_major_login(logintoken, openid_or_server="IND"):
     """
-    Maps region to correct Garena regional game server URL.
-    IND routes to official https://client.ind.freefiremobile.com for authentic live player responses.
+    Maps token and region to the correct Garena regional game server URL.
+    Uses the token's JWT 'svr' header to guarantee signature validity:
+      svr '1' -> clientbp.ppmainecoonghj.com (Asia/Global Regional Gateway)
+      svr '2' -> client.us.freefiremobile.com (Americas Gateway)
+      svr '3' -> client.ind.freefiremobile.com (IND Official Gateway)
+    Falls back to REGION_CONFIG if header cannot be read.
     """
+    if logintoken and len(str(logintoken)) > 20:
+        try:
+            parts = str(logintoken).split('.')
+            if len(parts) >= 2:
+                header_b64 = parts[0] + '=' * (-len(parts[0]) % 4)
+                header = json.loads(base64.urlsafe_b64decode(header_b64))
+                svr = str(header.get('svr', ''))
+                if svr == '2':
+                    return {
+                        'token': logintoken,
+                        'serverUrl': "https://client.us.freefiremobile.com"
+                    }
+                elif svr == '1':
+                    return {
+                        'token': logintoken,
+                        'serverUrl': "https://clientbp.ppmainecoonghj.com"
+                    }
+                elif svr == '3':
+                    return {
+                        'token': logintoken,
+                        'serverUrl': "https://clientbp.freefireind.in"
+                    }
+        except Exception:
+            pass
+
     region = (openid_or_server or "IND").upper()
 
     REGION_CONFIG = {
-        "IND": "https://client.ind.freefiremobile.com",
+        "IND": "https://clientbp.freefireind.in",
         "BD": "https://clientbp.ppmainecoonghj.com",
         "SG": "https://clientbp.ppmainecoonghj.com",
         "RU": "https://clientbp.ppmainecoonghj.com",
@@ -299,7 +335,7 @@ def get_major_login(logintoken, openid_or_server="IND"):
         "PK": "https://clientbp.ppmainecoonghj.com"
     }
 
-    server_url = REGION_CONFIG.get(region, "https://client.ind.freefiremobile.com" if region == "IND" else "https://clientbp.ppmainecoonghj.com")
+    server_url = REGION_CONFIG.get(region, "https://clientbp.ppmainecoonghj.com")
 
     return {
         'token': logintoken,

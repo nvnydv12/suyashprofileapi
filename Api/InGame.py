@@ -117,8 +117,7 @@ def get_player_personal_show(serverurl, authorization, account_id, need_gallery_
         'Authorization': f"Bearer {authorization}",
         'X-Unity-Version': "2018.4.11f1",
         'X-GA': "v1 1",
-        'ReleaseVersion': RELEASEVERSION,
-        'Content-Type': "application/x-www-form-urlencoded"
+        'ReleaseVersion': RELEASEVERSION
     }
     
     response = requests.post(url, data=encrypted_payload, headers=headers)
@@ -135,9 +134,10 @@ def get_player_personal_show(serverurl, authorization, account_id, need_gallery_
         return json_data
         
     except requests.exceptions.RequestException as e:
+        auth_preview = str(authorization)[:15] if authorization else 'None'
         error_msg = f"Request failed: {e}"
         if 'response' in locals() and hasattr(response, 'text'):
-            error_msg += f", Response: {response.text}, Auth_Preview: '{authorization[:15]}...'"
+            error_msg += f", Response: {response.text}, Auth_Preview: '{auth_preview}...'"
         print(error_msg)
         return {"debug_error": error_msg}
     except Exception as e:
@@ -228,8 +228,7 @@ def get_player_stats(authorization, serverurl, mode, uid, match_type="CAREER"):
             'Authorization': f"Bearer {authorization}",
             'X-Unity-Version': "2018.4.11f1",
             'X-GA': "v1 1",
-            'ReleaseVersion': RELEASEVERSION,
-            'Content-Type': "application/x-www-form-urlencoded"
+            'ReleaseVersion': RELEASEVERSION
         }
         
         # Make request with timeout
